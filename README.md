@@ -39,8 +39,8 @@
       - Alternative to `patterns` is the ability to pass a custom `parser_class` that subclasses `mailmint.issuers.base.BaseIssuerParser` and its `parse_email_body` method for a more complex email parsing solution. Example:
       ```yaml
       issuers:
-      - name: Lender Bank Credit Card
-        email_query: 'from:alerts@abcbank.com subject:"ABC Bank Credit Card Transaction Alert"'
+      - name: HDFC Bank Account
+        email_query: 'from:alerts@hdfc.com subject:"HDFC A/c Transaction Alert"'
         parser_class: mailmint.issuers.hdfc.HDFCBankParser
       ```
 
