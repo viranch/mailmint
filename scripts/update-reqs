@@ -1,0 +1,17 @@
+#!/bin/bash
+
+SCRIPT_PATH="$( dirname -- "$( readlink -f -- "${0}"; )"; )"
+REQS_TXT="$SCRIPT_PATH/../requirements.txt"
+
+temp_dir=$(mktemp -d)
+
+cd $temp_dir
+python3 -m venv venv
+source venv/bin/activate
+
+python -m pip install --upgrade pip
+python -m pip install google-api-python-client google-auth-oauthlib pyyaml pandas
+
+echo "Updating $REQS_TXT"
+
+pip freeze | tee "$REQS_TXT"
