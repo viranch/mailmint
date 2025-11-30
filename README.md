@@ -13,7 +13,9 @@
    - Download `credentials.json` and place it in this folder.
 
 3. **Configure:**
-   - Create `config.yaml` with your issuer details and Google Sheets ID. Example config:
+   - Create `config.yaml` with your issuer details and Google Sheets ID.
+   - The `spreadsheet_id` must contain the ID of an existing Google spreadsheet that _your_ Google account has access to _and_ contains a sheet titled "Template". See [this spreadsheet](https://docs.google.com/spreadsheets/d/1q6Hi7OIl-hmbdJCR36JjpqeYDye4ud8hD7Tg9qPsiTA/) as an example. Feel free to clone it.
+   - Example config:
       ```yaml
       spreadsheet_id: "32TmpST7k_FBupEtGBt3pkrGSmyrkhRlNe-9CVlb-lJqI"
       issuers:
