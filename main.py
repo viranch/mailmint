@@ -85,9 +85,7 @@ def prepare_transaction_sheets(transactions):
     for month, group in df.groupby("month"):
         group = group.sort_values("date")
         values = group[["date", "amount", "merchant", "account", "category"]].values.tolist()
-        sheets_data.append((month, values))
-
-    return sheets_data
+        yield month, values
 
 def main():
     gmail_service = GMail()
@@ -106,8 +104,8 @@ def main():
         all_transactions.extend(transactions)
         print(f"{issuer['name']}: Extracted {len(transactions)} transactions.")
 
-    sheets_data = prepare_transaction_sheets(all_transactions)
-    sheets_service.write_to_spreadsheet(config["spreadsheet_id"], sheets_data)
+    for month, transactions in prepare_transaction_sheets(all_transactions):
+        sheets_client.write_to_spreadsheet(config["spreadsheet_id"], month, transactions)
 
 if __name__ == "__main__":
     main()

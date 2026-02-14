@@ -37,17 +37,17 @@ class GSheet(BaseGoogle):
             }
         ).execute()
 
-    def write_to_spreadsheet(self, spreadsheet_id, sheets_data, template_sheet="Template"):
-        if not sheets_data:
+    def write_to_spreadsheet(self, spreadsheet_id, sheet_name, sheet_data, template_sheet="Template"):
+        if not sheet_data:
             return
 
-        for sheet_name, values in sheets_data:
-            self.ensure_sheet(spreadsheet_id, sheet_name, template_sheet)
-            self.client.spreadsheets().values().update(
-                spreadsheetId=spreadsheet_id,
-                range=f"{sheet_name}!A2",
-                valueInputOption="RAW",
-                body={"values": values}
-            ).execute()
+        self.ensure_sheet(spreadsheet_id, sheet_name, template_sheet)
 
-            print(f"Written {len(values)} rows to sheet {sheet_name}.")
+        self.client.spreadsheets().values().update(
+            spreadsheetId=spreadsheet_id,
+            range=f"{sheet_name}!A2",
+            valueInputOption="RAW",
+            body={"values": sheet_data}
+        ).execute()
+
+        print(f"Written {len(sheet_data)} rows to sheet {sheet_name}.")
