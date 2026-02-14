@@ -1,5 +1,6 @@
 from googleapiclient.errors import HttpError
 from urllib.parse import quote
+import logging
 
 from mailmint.google.base import BaseGoogle, register_scope
 
@@ -9,6 +10,8 @@ register_scope("https://www.googleapis.com/auth/gmail.readonly")
 class GMail(BaseGoogle):
     def __init__(self, creds="credentials.json", token="token_gmail.pickle"):
         super().__init__("gmail", "v1", creds, token)
+        # instance logger
+        self.logger = logging.getLogger(__name__)
 
     def get_emails(self, query, after):
         full_query = f'{query} after:{after} in:anywhere'
@@ -70,7 +73,7 @@ class GMail(BaseGoogle):
                 batch.execute()
             except HttpError as e:
                 # log/print as appropriate; keep going with whatever responses we have
-                print("Batch execute error:", e)
+                self.logger.warning("Batch execute error: %s", e)
 
         # Convert results to mapping mid -> actual response (skip errors)
         emails = []

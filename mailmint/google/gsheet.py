@@ -1,4 +1,5 @@
 from mailmint.google.base import BaseGoogle, register_scope
+import logging
 
 register_scope("https://www.googleapis.com/auth/spreadsheets")
 
@@ -6,6 +7,8 @@ register_scope("https://www.googleapis.com/auth/spreadsheets")
 class GSheet(BaseGoogle):
     def __init__(self, creds="credentials.json", token="token_gmail.pickle"):
         super().__init__("sheets", "v4", creds, token)
+        # instance logger
+        self.logger = logging.getLogger(__name__)
 
     def ensure_sheet(self, spreadsheet_id, sheet_name, template_sheet="Template"):
         # create sheet_name if not exists
@@ -55,5 +58,4 @@ class GSheet(BaseGoogle):
             valueInputOption="RAW",
             body={"values": sheet_data}
         ).execute()
-
-        print(f"Written {len(sheet_data)} rows to sheet {sheet_name}.")
+        self.logger.info("Written %d rows to sheet %s.", len(sheet_data), sheet_name)

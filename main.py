@@ -1,5 +1,6 @@
 import yaml
 import pandas as pd
+import logging
 from datetime import datetime, timedelta
 import importlib
 
@@ -44,7 +45,7 @@ def extract_transactions(messages, parser):
         html_body = get_email_html(msg)
         if config.get("debug", False):
             fname = dump_email(msg, html_body)
-            print(f"Email written to (debug mode): {fname}")
+            logger.debug("Email written to (debug mode): %s", fname)
 
         required_keywords = ["inr", "rs."]
         if not any(kw.lower() in html_body.lower() for kw in required_keywords):
@@ -54,7 +55,7 @@ def extract_transactions(messages, parser):
         details = parser.parse_email_body(html_body, msg)
         if not details:
             fname = dump_email(msg, html_body)
-            print(f"No transaction details found in: {fname}")
+            logger.warning("No transaction details found in: %s", fname)
             continue
 
         email_date = datetime.fromtimestamp(int(msg["internalDate"]) / 1000)
@@ -66,16 +67,16 @@ def extract_transactions(messages, parser):
             "amount": details.get("amount"),
             "category": category
         }
-        print(transaction)
+        logger.info("Parsed transaction: %s", transaction)
         transactions.append(transaction)
 
-    print(f"{parser.name}: Skipped {skipped} emails without required keywords.")
+    logger.info("%s: Skipped %d emails without required keywords.", parser.name, skipped)
 
     return transactions
 
 def prepare_transaction_sheets(transactions):
     if not transactions:
-        print("No transactions found.")
+        logger.info("No transactions found.")
         return []
 
     df = pd.DataFrame(transactions)
@@ -98,13 +99,14 @@ def main():
     for issuer in config["issuers"]:
         parser = get_parser_for_issuer(issuer)
         messages = gmail_service.get_emails(issuer["email_query"], after)
-        print(f"{issuer['name']}: Parsing {len(messages)} emails.")
+        logger.info("%s: Parsing %d emails.", issuer.get("name"), len(messages))
 
         transactions = extract_transactions(messages, parser)
         all_transactions.extend(transactions)
-        print(f"{issuer['name']}: Extracted {len(transactions)} transactions.")
+        logger.info("%s: Extracted %d transactions.", issuer.get("name"), len(transactions))
 
     for month, transactions in prepare_transaction_sheets(all_transactions):
+        logger.info("Prepared sheet data for month %s with %d transactions.", month, len(transactions))
         sheets_client.write_to_spreadsheet(config["spreadsheet_id"], month, transactions)
 
 if __name__ == "__main__":
