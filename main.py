@@ -1,5 +1,7 @@
 import yaml
 import pandas as pd
+import os
+import glob
 import logging
 from datetime import datetime, timedelta
 import importlib
@@ -13,6 +15,59 @@ def load_config():
         return yaml.safe_load(f)
 
 config = load_config()
+
+# set up basic logging for discovery helper
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+def get_script_dir():
+    """Return the absolute directory containing this script, independent of CWD."""
+    return os.path.dirname(os.path.abspath(__file__))
+
+def discover_token_pickles(script_dir=None, pattern="*.pickle"):
+    """Return list of absolute paths to token pickle files found in script directory.
+
+    Args:
+        script_dir: directory to search; defaults to directory of this script.
+        pattern: glob pattern to match files (defaults to "*.pickle").
+    """
+    if script_dir is None:
+        script_dir = get_script_dir()
+    search_path = os.path.join(script_dir, pattern)
+    picks = glob.glob(search_path)
+    # sort for deterministic order
+    picks.sort()
+    return picks
+
+def build_gmail_clients_from_pickles(script_dir=None, pattern="*.pickle"):
+    """Discover pickle token files and instantiate a GMail client for each.
+
+    Returns a list of dicts: {"token": path, "client": GMail instance, "email": account email or None}
+    Invalid or un-authorisable token files are skipped with a warning.
+    """
+    clients = []
+    picks = discover_token_pickles(script_dir=script_dir, pattern=pattern)
+    if not picks:
+        logger.info("No token pickles found in %s", script_dir or get_script_dir())
+        return clients
+
+    for p in picks:
+        try:
+            g = GMail(creds="credentials.json", token=p)
+            # try to fetch profile email to verify token works
+            try:
+                profile = g.client.users().getProfile(userId="me").execute()
+                email = profile.get("emailAddress")
+            except Exception:
+                # token might be invalid/expired but client constructed; record None
+                email = None
+            clients.append({"token": p, "client": g, "email": email})
+            logger.info("Loaded token: %s (email=%s)", os.path.basename(p), email)
+        except Exception as e:
+            logger.warning("Skipping token %s: %s", p, str(e))
+            continue
+
+    return clients
 
 def import_class(full_class_path):
     """
@@ -89,8 +144,8 @@ def prepare_transaction_sheets(transactions):
         yield month, values
 
 def main():
-    gmail_service = GMail()
-    sheets_service = GSheet()
+    sheets_client = GSheet()
+    gmail_clients = build_gmail_clients_from_pickles()
 
     now = datetime.now()
     after = (now - timedelta(days=150)).strftime("%Y/%m/%d")
@@ -98,7 +153,12 @@ def main():
     all_transactions = []
     for issuer in config["issuers"]:
         parser = get_parser_for_issuer(issuer)
-        messages = gmail_service.get_emails(issuer["email_query"], after)
+
+        messages = []
+        for client_data in gmail_clients:
+            gmail_client = client_data["client"]
+            messages.extend(gmail_client.get_emails(issuer["email_query"], after))
+
         logger.info("%s: Parsing %d emails.", issuer.get("name"), len(messages))
 
         transactions = extract_transactions(messages, parser)
