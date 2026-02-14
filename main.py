@@ -5,6 +5,8 @@ import glob
 import logging
 from datetime import datetime, timedelta
 import importlib
+from collections import defaultdict
+import requests
 
 from mailmint.google.gmail import GMail
 from mailmint.google.gsheet import GSheet
@@ -143,6 +145,28 @@ def prepare_transaction_sheets(transactions):
         values = group[["date", "amount", "merchant", "account", "category"]].values.tolist()
         yield month, values
 
+def pushover(account_balances):
+    if not account_balances:
+        logger.info("No account balances to send.")
+        return
+
+    message = "\n".join(f"{acc}: ₹{bal:,.2f}" for acc, bal in account_balances.items())
+    logger.info("Sending Pushover notification:\n%s", message)
+    # Here you would integrate with the Pushover API using your credentials and send the message.
+
+    po = config.get("pushover", {})
+    user, token = po.get("user_key"), po.get("api_token")
+
+    if not user or not token:
+        logger.warning("Pushover credentials not configured. Skipping notification.")
+        return
+
+    requests.post("https://api.pushover.net/1/messages.json", data={
+        "token": token,
+        "user": user,
+        "message": message,
+    })
+
 def main():
     sheets_client = GSheet()
     gmail_clients = build_gmail_clients_from_pickles()
@@ -151,6 +175,7 @@ def main():
     after = (now - timedelta(days=150)).strftime("%Y/%m/%d")
 
     all_transactions = []
+    account_balances = defaultdict(float)
     for issuer in config["issuers"]:
         parser = get_parser_for_issuer(issuer)
 
@@ -165,9 +190,23 @@ def main():
         all_transactions.extend(transactions)
         logger.info("%s: Extracted %d transactions.", issuer.get("name"), len(transactions))
 
+        if issuer.get("notify_balance", False) and transactions:
+            for trx in transactions:
+                if trx["date"][:7] == now.strftime("%Y-%m"):
+                    if any(excl in trx["merchant"].lower() for excl in issuer.get("notify_exclude_merchants", [])):
+                        logger.info("Excluding merchant '%s' from balance calculation for account %s.", trx["merchant"], trx["account"])
+                        continue
+                    account_balances[trx["account"]] += trx["amount"]
+
     for month, transactions in prepare_transaction_sheets(all_transactions):
         logger.info("Prepared sheet data for month %s with %d transactions.", month, len(transactions))
         sheets_client.write_to_spreadsheet(config["spreadsheet_id"], month, transactions)
+
+    for acc, bal in account_balances.items():
+        account_balances[acc] = -bal  # negate to show positive balance if net debits exceed credits
+        logger.info("Account balance for %s: %.2f", acc, account_balances[acc])
+
+    pushover(account_balances)
 
 if __name__ == "__main__":
     main()
