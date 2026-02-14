@@ -43,6 +43,12 @@ class GSheet(BaseGoogle):
 
         self.ensure_sheet(spreadsheet_id, sheet_name, template_sheet)
 
+        # clear 1000 rows of the sheet before writing new data (adjust as needed)
+        self.client.spreadsheets().values().clear(
+            spreadsheetId=spreadsheet_id,
+            range=f"{sheet_name}!A2:{chr(64 + len(sheet_data[0]))}1000"
+        ).execute()
+
         self.client.spreadsheets().values().update(
             spreadsheetId=spreadsheet_id,
             range=f"{sheet_name}!A2",
