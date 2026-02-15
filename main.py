@@ -150,9 +150,9 @@ def pushover(account_balances):
         logger.info("No account balances to send.")
         return
 
-    message = "\n".join(f"{acc}: ₹{bal:,.2f}" for acc, bal in account_balances.items())
+    total = sum(account_balances.values())
+    message = f"<b>Total: ₹{total:,.2f}</b>" + "\n" + "\n".join(f"{acc}: ₹{bal:,.2f}" for acc, bal in account_balances.items())
     logger.info("Sending Pushover notification:\n%s", message)
-    # Here you would integrate with the Pushover API using your credentials and send the message.
 
     po = config.get("pushover", {})
     user, token = po.get("user_key"), po.get("api_token")
@@ -161,7 +161,7 @@ def pushover(account_balances):
         logger.warning("Pushover credentials not configured. Skipping notification.")
         return
 
-    requests.post("https://api.pushover.net/1/messages.json", data={
+    requests.post("https://api.pushover.net/1/messages.json", params={'html': 1}, data={
         "token": token,
         "user": user,
         "message": message,
