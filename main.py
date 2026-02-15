@@ -192,8 +192,11 @@ def main():
         logger.info("%s: Extracted %d transactions.", issuer.get("name"), len(transactions))
 
         if issuer.get("notify_balance", False) and transactions:
+            # report balances for all accounts and transactions uptil yesterday
+            # to handle edge case of when the new month starts
+            yesterday_month = (now - timedelta(days=1)).strftime("%Y-%m")
             for trx in transactions:
-                if trx["date"][:7] == now.strftime("%Y-%m"):
+                if trx["date"][:7] == yesterday_month:
                     if any(excl in trx["merchant"].lower() for excl in issuer.get("notify_exclude_merchants", [])):
                         logger.info("Excluding merchant '%s' from balance calculation for account %s.", trx["merchant"], trx["account"])
                         continue
