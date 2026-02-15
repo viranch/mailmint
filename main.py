@@ -172,7 +172,8 @@ def main():
     gmail_clients = build_gmail_clients_from_pickles()
 
     now = datetime.now()
-    after = (now - timedelta(days=150)).strftime("%Y/%m/%d")
+    # last 2 calendar months
+    after = (now.replace(day=1) - timedelta(days=1)).replace(day=1).strftime("%Y/%m/%d")
 
     all_transactions = []
     account_balances = defaultdict(float)
