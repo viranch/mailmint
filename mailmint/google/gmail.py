@@ -1,6 +1,8 @@
 from googleapiclient.errors import HttpError
 from urllib.parse import quote
 import logging
+import time
+import random
 
 from mailmint.google.base import BaseGoogle, register_scope
 
@@ -41,45 +43,82 @@ class GMail(BaseGoogle):
 
         return fetched
 
-    def bulk_fetch_messages(self, message_ids, batch_size=100, fmt="full", fields=None):
+    def bulk_fetch_messages(self, message_ids, batch_size=100, fmt="full", fields=None,
+                            attempt=0, max_retries=5, initial_delay=1.0):
         """
         Fetch many Gmail messages using batch requests.
         - message_ids: list of message ids (strings)
         - batch_size: number of messages per batch (50-100 recommended)
         - fmt: 'full' | 'metadata' | 'raw' etc.
         - fields: optional fields string to reduce payload size
+        - max_retries: max number of retries per batch on rate limit errors
+        - initial_delay: initial delay in seconds for exponential backoff
 
-        Returns dict mapping message_id -> response dict (only successful ones included).
+        Returns list of response dicts (only successful ones included).
         """
         results = {}
+        rate_limited_ids = []
 
         def batch_callback(request_id, response, exception):
             if exception:
-                results[request_id] = {"error": exception}
+                is_rate_limit = (
+                    isinstance(exception, HttpError)
+                    and exception.resp.status in (429, 403)
+                    and ('rateLimitExceeded' in str(exception) or 'userRateLimitExceeded' in str(exception))
+                )
+                if is_rate_limit:
+                    rate_limited_ids.append(request_id)
+                else:
+                    self.logger.warning("Error fetching message %s: exception=%s, response=%s", request_id, exception, response)
+                    results[request_id] = {"error": exception}
             else:
                 results[request_id] = response
 
+        def _build_request(mid):
+            if fields:
+                return self.client.users().messages().get(userId="me", id=mid, format=fmt, fields=fields)
+            else:
+                return self.client.users().messages().get(userId="me", id=mid, format=fmt)
+
         for i in range(0, len(message_ids), batch_size):
-            batch = self.client.new_batch_http_request(callback=batch_callback)
             slice_ids = message_ids[i:i + batch_size]
+
+            batch = self.client.new_batch_http_request(callback=batch_callback)
             for mid in slice_ids:
-                # Build request with optional fields param
-                if fields:
-                    request = self.client.users().messages().get(userId="me", id=mid, format=fmt, fields=fields)
-                else:
-                    request = self.client.users().messages().get(userId="me", id=mid, format=fmt)
-                batch.add(request, request_id=mid)
+                batch.add(_build_request(mid), request_id=mid)
             try:
                 batch.execute()
             except HttpError as e:
-                # log/print as appropriate; keep going with whatever responses we have
                 self.logger.warning("Batch execute error: %s", e)
 
-        # Convert results to mapping mid -> actual response (skip errors)
+        # Retry any rate-limited IDs from this batch with exponential backoff
+        if rate_limited_ids and attempt < max_retries:
+            delay = initial_delay * (2 ** attempt) + random.uniform(0, 1)
+            self.logger.warning(
+                "Rate limit hit for %d message(s) in batch %d/%d. Retry %d/%d in %.1fs...",
+                len(rate_limited_ids),
+                i // batch_size + 1,
+                (len(message_ids) + batch_size - 1) // batch_size,
+                attempt + 1,
+                max_retries,
+                delay,
+            )
+            time.sleep(delay)
+
+            # Recursive retry for rate-limited messages
+            retried = self.bulk_fetch_messages(rate_limited_ids, batch_size=batch_size, fmt=fmt, fields=fields, attempt=attempt + 1)
+            for msg in retried:
+                results[msg["id"]] = msg
+        elif rate_limited_ids:
+            # If still rate-limited after all retries, log them as errors
+            for mid in rate_limited_ids:
+                self.logger.error("Failed to fetch message %s after %d retries (rate limited)", mid, max_retries)
+                results[mid] = {"error": "rateLimitExceeded after retries"}
+
+        # Convert results to list (skip errors)
         emails = []
         for entry in results.values():
             if isinstance(entry, dict) and "error" in entry:
-                # skip or log
                 continue
             emails.append(entry)
 
